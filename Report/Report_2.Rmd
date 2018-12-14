@@ -1,0 +1,232 @@
+---
+title: "Detecting Potential Coverage Issues"
+author: "Lun Li"
+date: "November 9, 2018"
+output: html_document
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+packages <- c("reshape", "lubridate", "data.table", "plyr", "zoo", "bit64",
+              "ggplot2", "xtable", "foreign", "dplyr", "foreach","doParallel",
+              "readstata13", "stringr","plm", "blsAPI", "rjson", "knitr")
+lapply(packages, require, character.only = TRUE)
+
+# If running at home
+# path = "/Users/lunl/Dropbox/Research/2. Ad Intel/Github Code/ad/"
+# If running on cluster 
+path = "/home/lunl/Research/Advertisement/"
+# If running in office
+#path = "/home/lunl/Dropbox/Research/2. Ad Intel/Github Code/ad/"
+ 
+data <- fread(paste0(path, "Data/expenditure.csv"))
+data[, ym := as.yearmon(ym)]
+industryName <- fread(paste0(path, "Reference/Ref_data/industryName.csv"))
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+Hi Greg,
+
+In last report we saw some time trends on advertisement expenditure. For example, advertising expenitures on Internet has decreased, while expenditures on SpotTV and Outdoor ads have incrased. 
+```{r, fig.width = 12, fig.height = 6, out.width = '100%' }
+A1.1d <- data[,.(exp =sum(exp)) ,by = .(MajorMediaType, y)]
+p1 <- ggplot(data = A1.1d, aes(y)) + geom_bar(aes(weight = exp, fill = MajorMediaType)) + xlab("Year") +
+  ylab("Expenditure") + theme_classic()
+
+A1.1e <- A1.1d[,.(exp = sum(exp)), by = .(y)] %>% merge(A1.1d, by = "y")
+A1.1e[,exp.share := exp.y/exp.x]
+p2 <- ggplot(data = A1.1e, aes(y)) + geom_bar(aes(weight = exp.share, fill = MajorMediaType)) + xlab("Year") +
+  ylab("Expenditure Share")+theme_classic()
+
+multiplot(p1,p2, cols = 2)
+
+A1.1f <- data[,.(exp = sum(exp)), by = .(MajorMediaType, y)][order(MajorMediaType, y)]
+ggplot(A1.1f, aes(y, exp)) + geom_line() + geom_point() + xlab("Year") + ylab("Expenditure") + 
+  facet_wrap(~MajorMediaType, scales = "free", ncol = 3) + 
+  ggtitle("Total Expenditure on Advertisement, 10-15, by Major Media Type") + theme_classic()
+
+```
+To examine whether these trends are caused by Nielsen's coverage issues, I'll limit my focus to **internet ads** for now, and try to answer the following questions.
+
+- What's the total number of brands, ads, unique ads included each year?
+- What's the total "impression" each year? 
+- How does "average cost per ad" and "average cost per person" change?
+- Within a fixed subset of firms that have positive ad expenditure in internet ads from 10-15, do we still observe the same trends? 
+- Conditional on a firm has positive expenditure on internet ads this year, what's the probability that it has lower expenditure on ads next year?
+
+### 1. Summary Statistics
+
+#### What's the total number of brands, ads, unique ads included each year?
+#### What's the total "impression" each year?
+
+You are 100% right -- **the summary statistics below suggest that the coverage is shrinking from 10-15.**
+```{r}
+filelist <- paste0(path, "Data/InternetSummary", 2010:2015, ".csv")
+summary <- lapply(filelist, fread) %>% rbindlist()
+internet <- summary[order(industry, MediaTypeID, ym)][ym>=2010]
+internet[, ":="(ym = as.yearmon(ym), date = as.Date(as.yearmon(ym)), 
+                year = year(as.yearmon(ym)))]
+
+## 1 - What's the total number of brands, ads, unique ads included each year?
+##   - What's the total "impression"" each year? 
+
+dat.1 <- internet[,.(count = sum(count), exp = sum(exp), brands = sum(brands),
+                     nunique.ads = sum(nunique.ads), total.imp = sum(total.imp)), by = .(year)]
+
+kable(dat.1, caption = "Summary Statistics for Internet Ads", align = "l", col.names = c("Year", "Total Number of Ads", "Total Expenditure", "Number of Brands", "Number of Unique Ads", "Total Imp"))
+```
+
+This seems very strange, because I don't think Nielsen will make such a mistake and drop some of its advertisers. [This page](https://www.chicagobooth.edu/research/kilts/datasets/nielsen#collapse3) from Kilts-Nielsen center suggests that the Internet dataset we are looking at has "limited information", which may be one of the reasons. There's some chance that the Ad Intel dataset we have is only a subset of the whole thing. I already emailed Kilts-Nielsen center regarding this issue, and I'll let you know if I got a reply.
+
+In fact, [this post](https://www.recode.net/2018/3/26/17163852/online-internet-advertisers-outspend-tv-ads-advertisers-social-video-mobile-40-billion-2018) suggests that internet ads expenditure has been increasing, from 2000 to 2018, contradicting to the result I had. This is more evidence that the internet dataset we have may not be complete.
+
+### 2. Average Costs
+#### How does "average cost per ad" and "average cost per person" change?
+
+Even though the coverage shrinks, we can still look at things like average cost per ad, and average cost per person reached. 
+
+```{r}
+dat.2 <- dat.1[,.(cost.occur = exp/count,
+                  cost.brand = exp/brands,
+                  cost.ad = exp/nunique.ads,
+                  cost.imp = exp/total.imp), by = .(year)]
+kable(dat.2)
+```
+
+Where the columns stand for "cost per occurance", "cost per brand", "cost per (unique) ad" and "cost per person". Below is a graph for the same data:
+
+```{r}
+dat.2 <- melt(dat.2, id.vars = "year")
+ggplot(dat.2, aes(year, value)) + geom_line() + facet_wrap(~variable, scales = "free_y")+
+  xlab("") + ylab("")
+```
+
+We see that each firm (brand) is spending less on internet ads (topright panel), and that trend is largely driven by the fact that the cost of each individual ad has decreased (bottomleft). However we see that it becomes more expensive for each "occurence" of these ads (topleft) and also more expensive to reach an additional person (bottomright). I'm not entirely sure how to interpret these facts, but it seems to me that each firm is buying the same number of "unique ads" but less "occurences" per ad. 
+
+Now how much of that result is driven by between-industry differences? Here's the same graph again, but instead each line is an industry.
+
+```{r}
+dat.3 <- internet[,.(count = sum(count), exp = sum(exp), brands = sum(brands),
+                     nunique.ads = sum(nunique.ads), total.imp = sum(total.imp)), by = .(year,industry)]
+dat.3 <- dat.3[,.(cost.occur = exp/count,
+                  cost.brand = exp/brands,
+                  cost.ad = exp/nunique.ads,
+                  cost.imp = exp/total.imp), by = .(year,industry)]
+dat.4 <- melt(dat.3, id.vars = c("year", "industry"))
+ggplot(dat.4, aes(year, value, group = industry)) + geom_line(aes(color = industry)) + facet_wrap(~variable, scales = "free_y")+
+  xlab("") + ylab("")
+```
+
+We see that these trends of average costs seem to be consistent across industries. A potential concern, though, is whether these trends are also driven by changes in coverage.
+
+- If our dataset is a *random* sample of the whole thing, then we are fine.
+- But if the missing data is not random, then the result above will not be reliable.
+- For example, suppose we are missing a big advertiser such as Google from 2013 to 2015. Then all the time trends we observe are driven by the fact that Google is missing in our dataset from 2013 to 2015, and this will be true regardless of industries.
+  
+### 3. Looking at the same set of firms and distributors
+
+- **Within a fixed subset of firms that have positive ad expenditure in internet ads from 10-15, do we still observe the same trends?**
+- **Conditional on a firm has positive expenditure on internet ads this year, what's the probability that it has lower expenditure on ads next year?**
+
+I will focus now on a small subset of firms (defined as a brand) and distributors that appear in **every single year** between 2010 to 2015. More specifically, the subset includes 8277 unique firms and 799 unique distributors. They account for 45% of all advertiement occurences in the data.
+
+First look at the total internet ads expenditure:
+```{r}
+datasmall <- fread("/scratch/midway2/lunl/datasmall.csv")
+dat.5 <- datasmall[,.(exp = sum(Spend)), by = .(year)]
+kable(dat.5, col.names = c("Year", "Total Expenditure"))
+ggplot(data = dat.5, aes(year, exp)) + geom_line() + geom_point() + 
+  xlab("Year")+ ylab("Expenditure") + theme_classic()
+```
+
+It seems that we still observe the same pattern. What about by industry?
+
+```{r, fig.width = 10, fig.height = 14, out.width = '100%' }
+dat.6 <- datasmall[,.(exp = sum(Spend)), by = .(year, industry) ]
+dat.6 <- merge(dat.6, industryName, by = "industry" )
+ggplot(data = dat.6, aes(year, exp)) + geom_line() + geom_point() + 
+  xlab("Year")+ ylab("Expenditure") + facet_wrap(~ IndustryName,scale = "free_y",ncol = 4)+ theme_classic()
+```
+
+What's the takeaway? About the missing data problem, the worst case scenario is that we are not just missing certain firms and distributors in the data, but for **each firm and distributor** we are also missing some micro-level occurances. If that's the case, then there's no easy fix for the problem. I've emailed Kilts Center to ask about the issue. But if this is not the case, then again we have some evidence that ad expenditure on internet has decreased.
+
+Next let's look at the following two things: 
+
+- Given a firm has positive expenditure on internet ads in a certain year, what's the likelihood that this firm will reduce its ad expenditure next year. 
+
+```{r}
+## A. For each firm, what's the probability that they are spending more next year (from 2010-2014)
+dat.7 <- datasmall[,.(exp = sum(Spend)), by = .(year, PrimeBrandCode)]
+dat.7a <- dat.7[,.(year=year-1, PrimeBrandCode, exp)]
+dat.7b <- merge(dat.7, dat.7a, by =c("year", "PrimeBrandCode"))
+dat.7b[, exp.ratio:= exp.y/exp.x]
+dat.7b <- dat.7b[exp.ratio < 3 & exp.ratio >0] 
+
+ggplot(data = dat.7b, aes(exp.ratio)) + stat_density(fill = NA, color = "black") + geom_vline(xintercept = 1, color = "red") +facet_wrap(~year) + ggtitle("Annual Change in Internet Ad Expenditure, Firms")
+```
+
+- Given a distributor has positive revenue on internet ads in a certain year, what's the likelihood that this distributor will reduce its ad expenditure next year.
+
+```{r}
+## B. For each distributor, what's the probability that they are getting more revenue next year (from 2010-2014)
+dat.8 <- datasmall[,.(exp = sum(Spend)), by = .(year, DistributorCode)]
+dat.8a <- dat.8[,.(year=year-1, DistributorCode, exp)]
+dat.8b <- merge(dat.8, dat.8a, by =c("year", "DistributorCode"))
+dat.8b[, exp.ratio:= exp.y/exp.x]
+dat.8b <- dat.8b[exp.ratio < 3 & exp.ratio >0] 
+
+ggplot(data = dat.8b, aes(exp.ratio)) + stat_density(fill = NA, color = "black") + geom_vline(xintercept = 1, color = "red") +facet_wrap(~year) +  ggtitle("Annual Change in Internet Ad Expenditure, Distributors")
+```
+
+As time goes by, more firms and distributor are cutting their expenditures in internet ads. It seems to me that the market for internet ads has become more and more competitive.
+
+### 4. The "Google Effect"?
+Would it be the case that some superstar websites (such as google) have become so successful in online advertising that they are driving all other players out? To answer this, I tried to look for "Google.com" in the list of distributors, but it was not available in our dataset -- maybe that's why we are observing the decreasing trend on online ads expenditure! 
+
+Indeed, the total online ads expenditure (revenue) in our dataset is 2.5 billion in 2010 and falls to around 0.5 billion in 2015. But according to [this source](https://www.statista.com/statistics/266249/advertising-revenue-of-google/), Google's revenue in online ads increased from 28.2 billion in 2010 to 67.39 billion in 2015. That is, of course, **global** revenue in online ads, while our data only look at U.S. advertisement expenditure. Still, not including google in our analysis may significantly impact the reliability of any claims we make. 
+
+The last thing I want to show you is a table of google's global market share in online advertisement from 2001 to 2017, constructed from [this data source](https://www.recode.net/2018/3/26/17163852/online-internet-advertisers-outspend-tv-ads-advertisers-social-video-mobile-40-billion-2018) and [this data source](https://www.statista.com/statistics/266249/advertising-revenue-of-google/) shown before. 
+
+```{r}
+goog.share <- fread(paste0(path,"Reference/Ref_data/google_share.csv"))
+goog.share$'Google Share'  <- paste0(as.numeric(substr(goog.share$'Google Share',1,5))*100, "%")
+kable(goog.share, col.names = c("Year", "Google's Ad Revenue, Billions", "Global Internet Ad Spending, Billions", "Google's Market Share"))
+```
+
+From 2010 to 2015, Google's market share has increased from 43.6% in 2010 to 50.4% in 2011-12 and then decreases to 44.4% in 2015. The takeaway: if google's market share in the U.S. is the same as its global market share, then it actually **do not** have that much more market power in 2015 than in 2010. Even though total ad revenue for all other distributors is much lower in 2015 than in 2010, google may not be the reason for it. 
+
+That's all I have for now. I will let you know as soon as I hear back from Kilts-Nielsen center on more details about missing data.

@@ -1,0 +1,141 @@
+---
+title: "Exploration with Nielsen Ad Intel Data"
+author: "Lun Li"
+date: "11/7/2018"
+output: 
+  html_document: 
+    highlight: espresso
+    theme: readable
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+packages <- c("reshape", "lubridate", "data.table", "plyr", "zoo", "bit64",
+              "ggplot2", "xtable", "foreign", "dplyr", "foreach","doParallel",
+              "readstata13", "stringr","plm", "blsAPI", "rjson", "knitr")
+lapply(packages, require, character.only = TRUE)
+
+# If running at home
+# path = "/Users/lunl/Dropbox/Research/2. Ad Intel/Github Code/ad/"
+# If running on cluster 
+# path = "/home/lunl/Research/Advertisement/"
+# If running in office
+path = "/home/lunl/Dropbox/Research/2. Ad Intel/Github Code/ad/"
+ 
+data <- fread(paste0(path, "Data/expenditure.csv"))
+data[, ym := as.yearmon(ym)]
+```
+### Introduction
+
+This report explores the Nielsen Ad Intel Dataset in search of interesting empirical facts.
+
+### 1. Main Figures and Tables
+#### 1.1 Total Expenditure on Advertisement, All Industries and Media Types, Annual
+```{r}
+A1.1 <- data[,.(exp = sum(exp)), by = .(y)]
+kable(A1.1, caption = "Total Expenditure on Advertisement, 10-15", align = "l", col.names = c("Year", "Expenditure"))
+
+ggplot(A1.1, aes(y, exp)) + geom_line() + geom_point() + xlab("Year") + ylab("Expenditure") + 
+  ggtitle("Total Expenditure on Advertisement, 10-15") + theme_classic()
+```
+
+#### 1.2 Total Expenditure on Advertisement, All Industries and Media Types, Monthly
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+A1.1a <- data[,.(exp = sum(exp)), by = .(ym)][order(ym)]
+A1.1a[, date:= as.Date(ym)]
+#kable(A1.1a[,.(ym, exp)], caption = "Total Expenditure on Advertisement, Monthly, 10-15", align = "l", col.names = c("Month", # "Expenditure"))
+
+ggplot(A1.1a, aes(date, exp)) + geom_line() + geom_point() + xlab("Date") + ylab("Expenditure") +
+  ggtitle("Total Expenditure on Advertisement, Monthly, 10-15") + theme_classic() +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b-%y", limits = c(min(A1.1a$date), max(A1.1a$date)), expand = c(0.01,0.03))
+```
+
+#### 1.3 Composition of Advertisement Expenditure, All Industries, by Major Media Types
+An surprising result is that the ad expenditure on internet has gone **down**, not up, from 2010 to 2015. This is true both in dollar values and percentage shares, as is shown below.
+```{r, out.width = '100%'}
+A1.1d <- data[,.(exp =sum(exp)) ,by = .(MajorMediaType, y)]
+ggplot(data = A1.1d, aes(y)) + geom_bar(aes(weight = exp, fill = MajorMediaType)) + xlab("Year") +
+  ylab("Expenditure") + theme_classic()
+
+A1.1e <- A1.1d[,.(exp = sum(exp)), by = .(y)] %>% merge(A1.1d, by = "y")
+A1.1e[,exp.share := exp.y/exp.x]
+ggplot(data = A1.1e, aes(y)) + geom_bar(aes(weight = exp.share, fill = MajorMediaType)) + xlab("Year") +
+  ylab("Expenditure Share")+theme_classic()
+```
+
+#### 1.4 Total Expenditure on Advertisement, All Industries, by Major Media Type, 10-15, Annual
+
+- Again, surprisingly, the advertisement expenditure on internet has decreased significantly from 2010 to 2015. 
+- We also see expenditure on TV ads gone up. **This fact is not driven by some "superstar" TV ads (say, during Super Bowl).** I excluded the most expensive and least expensive ads (namely, top 1% and bottom 1%) when constructing these figures. 
+- You can find a more detailed breakdown by media types in 2.1, where we look at things like "Local Newspaper", "National Newspaper", "Local Internet", "National Internet", etc. 
+- Notice that I didn't include "cinema" ads here because that data is only available from 2013 to 2015. (Let me know if you'd like to see it.)
+
+```{r, fig.width = 9, fig.height = 6, out.width = '100%' }
+A1.1f <- data[,.(exp = sum(exp)), by = .(MajorMediaType, y)][order(MajorMediaType, y)]
+ggplot(A1.1f, aes(y, exp)) + geom_line() + geom_point() + xlab("Year") + ylab("Expenditure") + 
+  facet_wrap(~MajorMediaType, scales = "free", ncol = 3) + 
+  ggtitle("Total Expenditure on Advertisement, 10-15, by Major Media Type") + theme_classic()
+```
+
+#### 1.5 Total Expenditure on Advertisement All Media Types, by Industry, 10-15, Annual
+
+- You will find an error message below -- please ignore it. It has something to do with an industry ("promo") that only has 1 observation. 
+- I did not find a detailed description on what the "promo" industry is -- I don't think there's need to pay much attention to it anyway. 
+- We see that the ad expenditure of different industries are quite heterogeneous.
+
+```{r, fig.width = 12, fig.height = 18, out.width = '100%', warning = FALSE}
+A2.1 <- data[,.(exp = sum(exp)), by = .(IndustryName, y)][order(IndustryName, y)]
+ggplot(A2.1, aes(y, exp)) + geom_line() + geom_point() + 
+  xlab("Year") + ylab("Expenditure") + facet_wrap(~IndustryName, scale = "free", ncol = 4) +
+  ggtitle("Total Expenditure on Advertisement, 10-15, by Industry") + theme_classic()
+```
+
+
+### 2. Other Tables and Figures
+Here I keep some additional graphs for your reference. They are usually a more detailed breakdown of a graph that you have seen.
+
+#### 2.1 Total Expenditure on Advertisement, All Industries, by Detailed Media Type, 10-15, Annual
+```{r, fig.width = 9, fig.height = 12, out.width = '100%' }
+A1.1b <- data[,.(exp = sum(exp)), by = .(MediaType, y)][order(MediaType, y)]
+
+ggplot(A1.1b, aes(y, exp)) + geom_line() + geom_point() + xlab("Year") + ylab("Expenditure") + 
+  facet_wrap(~MediaType, scales = "free", ncol = 3) + 
+  ggtitle("Total Expenditure on Advertisement, 10-15, by Detailed Media Type") + theme_classic()
+```
+
+
+#### 2.2 Total Expenditure on Advertisement, All Industries, by Detailed Media Type, 10-15, Monthly
+```{r,fig.width = 9, fig.height = 12, out.width = '100%', warning = FALSE}
+A1.1c <- data[,.(exp = sum(exp)), by = .(MediaType, ym)][order(MediaType, ym)]
+A1.1c[, date:= as.Date(ym)]
+
+ggplot(A1.1c, aes(date, exp)) + geom_line() + geom_point() + xlab("Date") + ylab("Expenditure") +
+  facet_wrap(~MediaType, scales = "free", ncol = 2) + ggtitle("Total Expenditure on Advertisement, Monthly, 10-15, by Detailed Media Type") + 
+  theme_classic() + scale_x_date(date_breaks = "years", date_labels = "%y", limits = c(min(A1.1a$date), max(A1.1a$date)), expand = c(0.01,0.01))
+```
+
+#### 2.3 Total Expenditure on Advertisement, All Media Types, by Industry, 10-15, Monthly
+Similar here, you will find an error message below. Please ignore it.
+```{r,fig.width = 12, fig.height = 40, out.width = '100%', warning = FALSE}
+A2.1a <- data[,.(exp = sum(exp)), by = .(IndustryName, ym)][order(IndustryName, ym)]
+A2.1a[, date:= as.Date(ym)]
+
+ggplot(A2.1a, aes(date, exp)) + geom_line() + geom_point() + xlab("Date") + ylab("Expenditure") +
+  facet_wrap(~IndustryName, scale = "free", ncol = 2)+ggtitle("Total Expenditure on Advertisement, All Media Types, by Industry, 10-15, Monthly") + theme_classic()
+```
+
+### Next Steps
+There are several other plots I'm currently working on. If you'd like to see anything else, please let me know and I'll add it to the list.
+
+- Ad expenditure by location, both dollar value and growth rate
+- Ad expenditure by location and media types
+- Ad expenditure by location and industry
+- Total number (count) of ads for each year, month, industry and media type 
+- Total number of **unique** ads for each year, month, industry and media type
+- Total number of seconds (i.e. duration) for TV ads and total "size" for newspaper ads
+- Total number of people reached, by media type and industry (**only available for National TV, Spot TV, Radio, and Internet. Internet impressions are for age 2+ and could not show breakdown by age, income, etc**)
+- Number of people reached per dollar spent, by media type and industry (**only available for National TV, Spot TV, Radio and Internet**)
+- Average [GRP](https://digiday.com/marketing/what-is-a-grp-gross-ratings-point/) of advertisements by industry (**only available for National TV, Spot TV, Radio and Internet**. GRP measures the "effectiveness" of an ad)
+- Average Cost Per Point (= Expenditures / GRP)  of advertisement, by industry (**only available for National TV, Spot TV, Radio and Internet**)
+
+### Thank you for reading!

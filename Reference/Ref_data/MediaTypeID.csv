@@ -1,0 +1,24 @@
+﻿MediaTypeID,Media Type
+1,Network TV
+4,Spanish Language Network TV
+2,Cable TV
+22,Spanish Language Cable TV
+3,Syndicated TV
+5,Spot TV
+13,Network Clearance Spot TV
+14,Syndicated Clearance Spot TV
+24,Local/Regional Cable TV
+7,National Magazine
+8,Local Magazine
+12,FSI Coupon
+9,National Newspaper
+16,National Sunday Supplement
+10,Local Newspaper
+15,Local Sunday Supplement
+6,Network Radio
+17,Spot Radio
+11,Outdoor
+25,National Internet
+26,Local Internet
+27,National Cinema
+28,Regional Cinema

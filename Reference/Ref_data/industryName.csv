@@ -1,0 +1,35 @@
+industry,IndustryName
+A1,"apparel,footwear, & accessories"
+B1,business & consumer svcs
+B2,insurance & real estate
+B3,"computers, off. equip. & stationery"
+B4,publishing & media
+B5,industrial materials
+B6,"freight, indus. & agri. dev."
+B7,bus. prop. & employ. recruit.
+D1,toiletries & cosmetics
+D2,drugs & remedies
+F1,foods & food products
+F2,"confect., snacks & soft drinks"
+F3,beer & wine
+G1,"cigarettes, tobacco & access"
+G2,"jewelry, optical gds. & cameras"
+G3,entertainment  & amusements
+G4,"sporting goods, toys, & games"
+G5,"pets, pet foods, suppl & organ."
+G7,retail
+G9,misc not elsewhere classified
+H1,household furn. suppl. & mat
+H2,household equipment & supplies
+H3,elec. entertnmt. equip. & suppl.
+H4,"soaps, cleansers & polishes"
+H5,bldg. mat. equip. & fixtures
+P1,promo
+P2,tv programs
+P3,tv networks/stations
+R1,direct response products
+T1,"auto.,auto.access & equip"
+T2,"gasoline, lubricants & fuels"
+T3,"airplns., aviatn.acc.,serv. & equip"
+T4,"travel,hotels & resorts"
+T6,horticulture & farming
